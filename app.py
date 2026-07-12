@@ -55,6 +55,14 @@ if uploaded_file is not None:
             f"it looks like an ID column, not a label. Pick a different target."
         )
         valid_target = False
+    elif pd.api.types.is_numeric_dtype(df[target_col]) and n_unique > 20:
+        st.error(
+            f"❌ This column has {n_unique} unique numeric values — it looks like a continuous "
+            f"(regression) target, not a set of classes. This app only supports classification "
+            f"targets right now (a column with a small number of distinct categories, like 0/1 "
+            f"or Win/Loss). Pick a different target column."
+        )
+        valid_target = False
     elif n_missing > 0.5 * n_rows:
         st.warning(f"⚠️ This column is {n_missing / n_rows:.0%} missing — results will be unreliable.")
 
@@ -100,7 +108,7 @@ if uploaded_file is not None:
             X = baseline_df.drop(columns=[target_col])
             y = baseline_df[target_col]
 
-            stratify_arg = y if y.nunique() < 20 else None
+            stratify_arg = y if (y.nunique() < 20 and y.value_counts().min() >= 2) else None
 
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=0.2, random_state=42, stratify=stratify_arg
@@ -156,6 +164,13 @@ if uploaded_file is not None:
                         eng_df = eng_df.dropna(subset=[col])
 
         total_missing_after = int(eng_df.isnull().sum().sum())
+
+        if eng_df.shape[0] == 0:
+            st.error(
+                "❌ This strategy removed every row (every row had at least one missing value "
+                "somewhere). Try 'Mean/Median + Mode' instead of dropping rows."
+            )
+            st.stop()
 
         col_a, col_b = st.columns(2)
         col_a.metric("Missing values before", total_missing_before)
@@ -300,7 +315,7 @@ if uploaded_file is not None:
             X_final = final_df.drop(columns=[target_col])
             y_final = final_df[target_col]
 
-            stratify_arg = y_final if y_final.nunique() < 20 else None
+            stratify_arg = y_final if (y_final.nunique() < 20 and y_final.value_counts().min() >= 2) else None
 
             X_train_f, X_test_f, y_train_f, y_test_f = train_test_split(
                 X_final, y_final, test_size=0.2, random_state=42, stratify=stratify_arg
