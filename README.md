@@ -4,7 +4,7 @@ A Streamlit app that proves feature engineering matters — with numbers, not cl
 
 Upload any CSV, pick a target column, and watch the app train a **baseline model on raw data**, apply real feature engineering (missing value imputation, scaling, categorical encoding), retrain the **same model on the engineered data**, and show you the exact accuracy improvement.
 
-**🔗 Live app:** https://feature-engineering-analyzer-7kflpqev8ka2ccq6mfg9m9.streamlit.app/
+**🔗 Live app:** https://feature-engineering-analyzer-slr4etpc88hhfg6b3ouahx.streamlit.app/
 
 ---
 
