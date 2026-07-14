@@ -67,9 +67,25 @@ if uploaded_file is not None:
         st.warning(f"⚠️ This column is {n_missing / n_rows:.0%} missing — results will be unreliable.")
 
     if valid_target:
+        problem_type = "Classification"
+        st.info(f"🔍 Detected problem type: **{problem_type}** ({n_unique} distinct classes)")
+
         st.session_state["df"] = df
         st.session_state["target_col"] = target_col
         st.success(f"Target set to: **{target_col}**")
+
+        # ------------------------------------------------------------------
+        # Duplicate row detection
+        # ------------------------------------------------------------------
+        n_duplicates = int(df.duplicated().sum())
+        if n_duplicates > 0:
+            st.warning(f"⚠️ Found **{n_duplicates}** duplicate row(s) out of {df.shape[0]} total.")
+            remove_duplicates = st.checkbox("Remove duplicate rows before engineering", value=True)
+            if remove_duplicates:
+                df = df.drop_duplicates().reset_index(drop=True)
+                st.caption(f"Removed {n_duplicates} duplicate row(s). New row count: {df.shape[0]}")
+        else:
+            st.caption("✅ No duplicate rows found.")
 
         # ------------------------------------------------------------------
         # STEP 2: Baseline model (naive, no engineering)
@@ -181,11 +197,82 @@ if uploaded_file is not None:
         st.session_state["eng_df"] = eng_df
 
         # ------------------------------------------------------------------
-        # STEP 4: Feature scaling
+        # STEP 4: Outlier detection & treatment
         # ------------------------------------------------------------------
-        st.header("3️⃣ Feature Scaling")
+        st.header("3️⃣ Outlier Detection & Treatment")
 
-        from sklearn.preprocessing import StandardScaler, MinMaxScaler
+        import numpy as np
+
+        outlier_numeric_cols = [c for c in eng_df.select_dtypes(include="number").columns if c != target_col]
+
+        if len(outlier_numeric_cols) == 0:
+            st.info("No numeric feature columns to check for outliers.")
+        else:
+            detect_method = st.radio(
+                "Choose outlier detection method:",
+                options=["IQR (Interquartile Range)", "Z-score"],
+                index=0,
+            )
+
+            outlier_mask = pd.DataFrame(False, index=eng_df.index, columns=outlier_numeric_cols)
+
+            if detect_method == "IQR (Interquartile Range)":
+                for col in outlier_numeric_cols:
+                    q1 = eng_df[col].quantile(0.25)
+                    q3 = eng_df[col].quantile(0.75)
+                    iqr = q3 - q1
+                    lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+                    outlier_mask[col] = (eng_df[col] < lower) | (eng_df[col] > upper)
+            else:
+                for col in outlier_numeric_cols:
+                    mean, std = eng_df[col].mean(), eng_df[col].std()
+                    if std > 0:
+                        z_scores = (eng_df[col] - mean) / std
+                        outlier_mask[col] = z_scores.abs() > 3
+
+            rows_with_outliers = outlier_mask.any(axis=1).sum()
+            st.write(f"Detected **{rows_with_outliers}** row(s) with at least one outlier "
+                      f"across {len(outlier_numeric_cols)} numeric column(s) using {detect_method}.")
+
+            if rows_with_outliers > 0:
+                treatment = st.radio(
+                    "Choose outlier treatment:",
+                    options=["Do nothing", "Remove rows", "Cap (clip to bounds)", "Winsorize (5th/95th percentile)"],
+                    index=0,
+                )
+
+                if treatment == "Remove rows":
+                    eng_df = eng_df[~outlier_mask.any(axis=1)].reset_index(drop=True)
+                    st.caption(f"Removed {rows_with_outliers} row(s). New row count: {eng_df.shape[0]}")
+                elif treatment == "Cap (clip to bounds)":
+                    for col in outlier_numeric_cols:
+                        q1 = eng_df[col].quantile(0.25)
+                        q3 = eng_df[col].quantile(0.75)
+                        iqr = q3 - q1
+                        lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+                        eng_df[col] = eng_df[col].clip(lower, upper)
+                    st.caption("Capped outlier values to IQR bounds (values beyond the bound are set to the bound).")
+                elif treatment == "Winsorize (5th/95th percentile)":
+                    for col in outlier_numeric_cols:
+                        lower = eng_df[col].quantile(0.05)
+                        upper = eng_df[col].quantile(0.95)
+                        eng_df[col] = eng_df[col].clip(lower, upper)
+                    st.caption("Winsorized values below 5th percentile / above 95th percentile.")
+                else:
+                    st.caption("No treatment applied — outliers left as-is.")
+
+            if eng_df.shape[0] == 0:
+                st.error("❌ Outlier removal eliminated all rows. Try Cap or Winsorize instead of Remove.")
+                st.stop()
+
+        st.session_state["eng_df"] = eng_df
+
+        # ------------------------------------------------------------------
+        # STEP 5: Feature scaling
+        # ------------------------------------------------------------------
+        st.header("4️⃣ Feature Scaling")
+
+        from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
         import matplotlib.pyplot as plt
 
         numeric_feature_cols = [c for c in eng_df.select_dtypes(include="number").columns if c != target_col]
@@ -195,11 +282,16 @@ if uploaded_file is not None:
         else:
             scale_method = st.radio(
                 "Choose a scaling method:",
-                options=["Standardization (Z-score)", "Normalization (Min-Max)"],
+                options=["Standardization (Z-score)", "Normalization (Min-Max)", "Robust Scaling (median/IQR)"],
                 index=0,
             )
 
-            scaler = StandardScaler() if scale_method == "Standardization (Z-score)" else MinMaxScaler()
+            if scale_method == "Standardization (Z-score)":
+                scaler = StandardScaler()
+            elif scale_method == "Normalization (Min-Max)":
+                scaler = MinMaxScaler()
+            else:
+                scaler = RobustScaler()
 
             before_values = eng_df[numeric_feature_cols].copy()
             eng_df[numeric_feature_cols] = scaler.fit_transform(eng_df[numeric_feature_cols])
@@ -220,7 +312,7 @@ if uploaded_file is not None:
         # ------------------------------------------------------------------
         # STEP 5: Categorical encoding
         # ------------------------------------------------------------------
-        st.header("4️⃣ Categorical Encoding")
+        st.header("5️⃣ Categorical Encoding")
 
         categorical_feature_cols = [c for c in eng_df.select_dtypes(exclude="number").columns if c != target_col]
 
@@ -274,7 +366,7 @@ if uploaded_file is not None:
         # ------------------------------------------------------------------
         # STEP 6: Correlation heatmap
         # ------------------------------------------------------------------
-        st.header("5️⃣ Correlation Heatmap (Engineered Data)")
+        st.header("6️⃣ Correlation Heatmap (Engineered Data)")
 
         import seaborn as sns
 
@@ -305,7 +397,7 @@ if uploaded_file is not None:
         # ------------------------------------------------------------------
         # STEP 7: Final model + before/after comparison
         # ------------------------------------------------------------------
-        st.header("6️⃣ Final Model (Engineered Data)")
+        st.header("7️⃣ Final Model (Engineered Data)")
 
         final_df = eng_df.copy()
 
@@ -365,7 +457,7 @@ if uploaded_file is not None:
         # ------------------------------------------------------------------
         # STEP 8: Download engineered CSV
         # ------------------------------------------------------------------
-        st.header("7️⃣ Download Engineered Dataset")
+        st.header("8️⃣ Download Engineered Dataset")
 
         csv_bytes = eng_df.to_csv(index=False).encode("utf-8")
 
