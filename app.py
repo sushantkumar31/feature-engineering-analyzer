@@ -74,6 +74,35 @@ if uploaded_file is not None:
         st.session_state["target_col"] = target_col
         st.success(f"Target set to: **{target_col}**")
 
+        st.subheader("Choose Model Algorithm")
+        model_choice = st.selectbox(
+            "This model will be used for BOTH the baseline and engineered comparison, "
+            "so the improvement you see is caused only by the data, not a different algorithm.",
+            options=["Logistic Regression", "Decision Tree", "Random Forest", "K-Nearest Neighbors",
+                     "Support Vector Machine", "Naive Bayes"],
+            index=0,
+        )
+
+        def build_model(name):
+            if name == "Logistic Regression":
+                from sklearn.linear_model import LogisticRegression
+                return LogisticRegression(max_iter=1000)
+            elif name == "Decision Tree":
+                from sklearn.tree import DecisionTreeClassifier
+                return DecisionTreeClassifier(random_state=42)
+            elif name == "Random Forest":
+                from sklearn.ensemble import RandomForestClassifier
+                return RandomForestClassifier(random_state=42)
+            elif name == "K-Nearest Neighbors":
+                from sklearn.neighbors import KNeighborsClassifier
+                return KNeighborsClassifier()
+            elif name == "Support Vector Machine":
+                from sklearn.svm import SVC
+                return SVC(probability=True, random_state=42)
+            elif name == "Naive Bayes":
+                from sklearn.naive_bayes import GaussianNB
+                return GaussianNB()
+
         # ------------------------------------------------------------------
         # Duplicate row detection
         # ------------------------------------------------------------------
@@ -130,12 +159,12 @@ if uploaded_file is not None:
                 X, y, test_size=0.2, random_state=42, stratify=stratify_arg
             )
 
-            baseline_model = LogisticRegression(max_iter=1000)
+            baseline_model = build_model(model_choice)
             baseline_model.fit(X_train, y_train)
             baseline_preds = baseline_model.predict(X_test)
             baseline_acc = accuracy_score(y_test, baseline_preds)
 
-            st.metric("Baseline Accuracy (raw, naive)", f"{baseline_acc:.2%}")
+            st.metric(f"Baseline Accuracy ({model_choice}, raw/naive)", f"{baseline_acc:.2%}")
             st.caption(
                 f"Trained on {baseline_df.shape[0]} rows (after dropping NaNs) "
                 f"using {X.shape[1]} numeric columns only."
@@ -413,12 +442,60 @@ if uploaded_file is not None:
                 X_final, y_final, test_size=0.2, random_state=42, stratify=stratify_arg
             )
 
-            final_model = LogisticRegression(max_iter=1000)
+            final_model = build_model(model_choice)
             final_model.fit(X_train_f, y_train_f)
             final_preds = final_model.predict(X_test_f)
             final_acc = accuracy_score(y_test_f, final_preds)
 
             st.session_state["final_acc"] = final_acc
+
+            # --------------------------------------------------------------
+            # Detailed evaluation metrics (final model only)
+            # --------------------------------------------------------------
+            from sklearn.metrics import (precision_score, recall_score, f1_score,
+                                          confusion_matrix, classification_report, roc_auc_score)
+            from sklearn.model_selection import cross_val_score
+
+            n_classes = y_final.nunique()
+            avg_method = "binary" if n_classes == 2 else "weighted"
+
+            precision = precision_score(y_test_f, final_preds, average=avg_method, zero_division=0)
+            recall = recall_score(y_test_f, final_preds, average=avg_method, zero_division=0)
+            f1 = f1_score(y_test_f, final_preds, average=avg_method, zero_division=0)
+
+            st.subheader("📊 Detailed Evaluation Metrics")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Accuracy", f"{final_acc:.2%}")
+            m2.metric("Precision", f"{precision:.2%}")
+            m3.metric("Recall", f"{recall:.2%}")
+            m4.metric("F1 Score", f"{f1:.2%}")
+
+            if n_classes == 2 and hasattr(final_model, "predict_proba"):
+                try:
+                    y_proba = final_model.predict_proba(X_test_f)[:, 1]
+                    roc_auc = roc_auc_score(y_test_f, y_proba)
+                    st.metric("ROC-AUC", f"{roc_auc:.3f}")
+                except Exception:
+                    pass
+
+            st.write("**Confusion Matrix**")
+            cm = confusion_matrix(y_test_f, final_preds)
+            fig_cm, ax_cm = plt.subplots(figsize=(4, 3))
+            sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax_cm)
+            ax_cm.set_xlabel("Predicted")
+            ax_cm.set_ylabel("Actual")
+            st.pyplot(fig_cm)
+
+            with st.expander("Full Classification Report"):
+                st.text(classification_report(y_test_f, final_preds, zero_division=0))
+
+            with st.expander("5-Fold Cross-Validation Score"):
+                try:
+                    cv_scores = cross_val_score(build_model(model_choice), X_final, y_final, cv=5)
+                    st.write(f"Mean CV Accuracy: **{cv_scores.mean():.2%}** (± {cv_scores.std():.2%})")
+                    st.write(f"Individual folds: {', '.join(f'{s:.2%}' for s in cv_scores)}")
+                except Exception as e:
+                    st.caption(f"Cross-validation not available for this data/model combination: {e}")
 
             st.subheader("📈 Before vs After: Accuracy Comparison")
 
@@ -432,8 +509,8 @@ if uploaded_file is not None:
                 st.metric("Engineered Model Accuracy", f"{final_acc:.2%}")
             else:
                 col_x, col_y, col_z = st.columns(3)
-                col_x.metric("Baseline Accuracy", f"{baseline_acc:.2%}")
-                col_y.metric("Engineered Accuracy", f"{final_acc:.2%}")
+                col_x.metric(f"Baseline Accuracy ({model_choice})", f"{baseline_acc:.2%}")
+                col_y.metric(f"Engineered Accuracy ({model_choice})", f"{final_acc:.2%}")
                 delta = final_acc - baseline_acc
                 col_z.metric("Improvement", f"{delta:+.2%}")
 
