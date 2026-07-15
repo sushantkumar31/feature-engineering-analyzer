@@ -70,6 +70,16 @@ if uploaded_file is not None:
         problem_type = "Classification"
         st.info(f"🔍 Detected problem type: **{problem_type}** ({n_unique} distinct classes)")
 
+        if n_rows < 100:
+            st.warning(f"⚠️ Small dataset ({n_rows} rows) — accuracy numbers may be unstable/unreliable "
+                        f"across different train/test splits.")
+
+        class_counts = df[target_col].value_counts()
+        if len(class_counts) > 1 and (class_counts.min() / class_counts.max()) < 0.3:
+            st.warning(f"⚠️ Class imbalance detected — largest class has {class_counts.max()} rows, "
+                        f"smallest has {class_counts.min()}. Accuracy alone can be misleading here; "
+                        f"check Precision/Recall/F1 in the final model section.")
+
         st.session_state["df"] = df
         st.session_state["target_col"] = target_col
         st.success(f"Target set to: **{target_col}**")
@@ -426,7 +436,102 @@ if uploaded_file is not None:
         # ------------------------------------------------------------------
         # STEP 7: Final model + before/after comparison
         # ------------------------------------------------------------------
-        st.header("7️⃣ Final Model (Engineered Data)")
+        st.header("7️⃣ Feature Selection")
+
+        low_var_check_cols = [c for c in eng_df.select_dtypes(include="number").columns if c != target_col]
+        constant_cols = [c for c in low_var_check_cols if eng_df[c].nunique() <= 1]
+        if constant_cols:
+            st.warning(f"⚠️ Constant feature(s) detected (no variation, zero predictive value): "
+                        f"{', '.join(constant_cols)}. Consider removing them via Variance Threshold below.")
+
+
+        from sklearn.feature_selection import (VarianceThreshold, SelectKBest,
+                                                 f_classif, mutual_info_classif, RFE)
+
+        fs_feature_cols = [c for c in eng_df.select_dtypes(include="number").columns if c != target_col]
+
+        if len(fs_feature_cols) < 2:
+            st.info("Not enough numeric feature columns to run feature selection.")
+        else:
+            fs_method = st.radio(
+                "Choose a feature selection method:",
+                options=["None (keep all features)", "Variance Threshold", "Correlation-based removal",
+                          "SelectKBest (ANOVA F-test)", "Mutual Information", "RFE (Recursive Feature Elimination)"],
+                index=0,
+            )
+
+            X_fs = eng_df[fs_feature_cols]
+            y_fs = eng_df[target_col]
+            selected_cols = fs_feature_cols  # default: keep everything
+
+            if fs_method == "Variance Threshold":
+                threshold = st.slider("Minimum variance to keep a feature", 0.0, 1.0, 0.01, 0.01)
+                vt = VarianceThreshold(threshold=threshold)
+                try:
+                    vt.fit(X_fs)
+                    selected_cols = list(X_fs.columns[vt.get_support()])
+                except Exception as e:
+                    st.warning(f"Could not apply Variance Threshold: {e}")
+
+            elif fs_method == "Correlation-based removal":
+                corr_threshold = st.slider("Correlation threshold (drop one of any pair above this)", 0.5, 1.0, 0.9, 0.05)
+                corr_matrix_fs = X_fs.corr().abs()
+                upper = corr_matrix_fs.where(np.triu(np.ones(corr_matrix_fs.shape), k=1).astype(bool))
+                to_drop = [col for col in upper.columns if any(upper[col] > corr_threshold)]
+                selected_cols = [c for c in fs_feature_cols if c not in to_drop]
+                if to_drop:
+                    st.caption(f"Dropped {len(to_drop)} redundant column(s): {', '.join(to_drop)}")
+
+            elif fs_method == "SelectKBest (ANOVA F-test)":
+                k = st.slider("Number of top features to keep (K)", 1, len(fs_feature_cols), min(5, len(fs_feature_cols)))
+                try:
+                    skb = SelectKBest(score_func=f_classif, k=k)
+                    skb.fit(X_fs, y_fs)
+                    selected_cols = list(X_fs.columns[skb.get_support()])
+                except Exception as e:
+                    st.warning(f"Could not apply SelectKBest: {e}")
+
+            elif fs_method == "Mutual Information":
+                k = st.slider("Number of top features to keep (K)", 1, len(fs_feature_cols), min(5, len(fs_feature_cols)))
+                try:
+                    skb_mi = SelectKBest(score_func=mutual_info_classif, k=k)
+                    skb_mi.fit(X_fs, y_fs)
+                    selected_cols = list(X_fs.columns[skb_mi.get_support()])
+                except Exception as e:
+                    st.warning(f"Could not apply Mutual Information selection: {e}")
+
+            elif fs_method == "RFE (Recursive Feature Elimination)":
+                n_features = st.slider("Number of features to keep", 1, len(fs_feature_cols), min(5, len(fs_feature_cols)))
+                try:
+                    rfe_model = build_model(model_choice)
+                    if not hasattr(rfe_model, "coef_") and not hasattr(rfe_model, "feature_importances_"):
+                        st.warning(
+                            f"{model_choice} doesn't expose feature weights natively, so RFE will use a "
+                            f"Decision Tree internally as a stand-in for ranking features."
+                        )
+                        from sklearn.tree import DecisionTreeClassifier
+                        rfe_model = DecisionTreeClassifier(random_state=42)
+                    rfe = RFE(estimator=rfe_model, n_features_to_select=n_features)
+                    rfe.fit(X_fs, y_fs)
+                    selected_cols = list(X_fs.columns[rfe.support_])
+                except Exception as e:
+                    st.warning(f"Could not apply RFE: {e}")
+
+            if fs_method != "None (keep all features)":
+                st.write(f"Selected **{len(selected_cols)}** of {len(fs_feature_cols)} feature(s): "
+                          f"{', '.join(selected_cols) if selected_cols else '(none)'}")
+                if len(selected_cols) == 0:
+                    st.error("❌ No features survived selection — try a less aggressive threshold/K.")
+                else:
+                    eng_df = eng_df[selected_cols + [target_col]]
+                    st.caption(f"eng_df now has {eng_df.shape[1]} columns (features + target).")
+
+        st.session_state["eng_df"] = eng_df
+
+        # ------------------------------------------------------------------
+        # STEP 8: Final model + before/after comparison
+        # ------------------------------------------------------------------
+        st.header("8️⃣ Final Model (Engineered Data)")
 
         final_df = eng_df.copy()
 
@@ -532,9 +637,79 @@ if uploaded_file is not None:
             st.session_state["eng_df"] = eng_df
 
         # ------------------------------------------------------------------
-        # STEP 8: Download engineered CSV
+        # STEP 9: Model interpretation, comparison, and export
         # ------------------------------------------------------------------
-        st.header("8️⃣ Download Engineered Dataset")
+        st.header("9️⃣ Model Interpretation & Comparison")
+
+        if final_df.shape[0] >= 20 and final_df.shape[1] >= 2:
+            st.subheader("Feature Importance")
+            feature_names = X_final.columns.tolist()
+
+            if hasattr(final_model, "feature_importances_"):
+                importances = final_model.feature_importances_
+                imp_df = pd.DataFrame({"Feature": feature_names, "Importance": importances}) \
+                    .sort_values("Importance", ascending=False)
+                st.dataframe(imp_df)
+            elif hasattr(final_model, "coef_"):
+                coefs = final_model.coef_[0] if final_model.coef_.ndim > 1 else final_model.coef_
+                coef_df = pd.DataFrame({"Feature": feature_names, "Coefficient": coefs}) \
+                    .sort_values("Coefficient", key=abs, ascending=False)
+                st.dataframe(coef_df)
+                st.caption("Positive coefficients push toward the positive class; negative push away from it.")
+            else:
+                st.caption(f"{model_choice} doesn't expose feature importances or coefficients directly.")
+
+            st.subheader("Model Comparison (All Algorithms, Same Engineered Data)")
+            if st.button("Run comparison across all models"):
+                comparison_rows = []
+                all_model_names = ["Logistic Regression", "Decision Tree", "Random Forest",
+                                    "K-Nearest Neighbors", "Support Vector Machine", "Naive Bayes"]
+                progress = st.progress(0)
+                for i, name in enumerate(all_model_names):
+                    try:
+                        m = build_model(name)
+                        m.fit(X_train_f, y_train_f)
+                        preds = m.predict(X_test_f)
+                        comparison_rows.append({
+                            "Model": name,
+                            "Accuracy": accuracy_score(y_test_f, preds),
+                            "F1 Score": f1_score(y_test_f, preds, average=avg_method, zero_division=0),
+                        })
+                    except Exception:
+                        comparison_rows.append({"Model": name, "Accuracy": None, "F1 Score": None})
+                    progress.progress((i + 1) / len(all_model_names))
+
+                comp_df = pd.DataFrame(comparison_rows).sort_values("Accuracy", ascending=False, na_position="last")
+                st.dataframe(comp_df.style.format({"Accuracy": "{:.2%}", "F1 Score": "{:.2%}"}))
+
+                best_valid = comp_df.dropna()
+                if not best_valid.empty:
+                    best_row = best_valid.iloc[0]
+                    st.success(f"🏆 Best performing model on this data: **{best_row['Model']}** "
+                                f"({best_row['Accuracy']:.2%} accuracy)")
+
+            st.subheader("Download Trained Model")
+            import joblib
+            import io
+            model_buffer = io.BytesIO()
+            joblib.dump(final_model, model_buffer)
+            model_buffer.seek(0)
+            st.download_button(
+                label="⬇️ Download trained model (.pkl)",
+                data=model_buffer,
+                file_name=f"{model_choice.lower().replace(' ', '_')}_model.pkl",
+                mime="application/octet-stream",
+            )
+            st.caption(
+                "Load it later with: `import joblib; model = joblib.load('model.pkl')`. "
+                "You'll need to apply the same preprocessing (scaling/encoding) to new data "
+                "before calling `model.predict()`."
+            )
+
+        # ------------------------------------------------------------------
+        # STEP 10: Download engineered CSV
+        # ------------------------------------------------------------------
+        st.header("🔟 Download Engineered Dataset")
 
         csv_bytes = eng_df.to_csv(index=False).encode("utf-8")
 
