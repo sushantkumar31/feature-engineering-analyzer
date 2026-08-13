@@ -1,5 +1,8 @@
 # 📊 Feature Engineering Impact Analyzer
 
+[![Live App](https://img.shields.io/badge/Streamlit-Live%20App-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://feature-engineering-analyzer-slr4etpc88hhfg6b3ouahx.streamlit.app/)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+
 An interactive **Streamlit** application that measures exactly how much **feature engineering** improves machine-learning performance. It trains the **same algorithm** on a raw, naive baseline and on a fully engineered pipeline, then compares both on the **same held-out test set** — so any measured difference is caused by the data transformation, not by the algorithm or by a leaky evaluation.
 
 **Why it matters.** Feature engineering is one of the highest-leverage skills in applied ML, but its benefit is usually asserted, not measured. This tool lets you *quantify* the impact on your own CSV, validate which preprocessing choices help, and export a production-ready pipeline that reproduces your results on new data.
@@ -140,7 +143,7 @@ No environment variables are required. The repository includes pinned `requireme
 6. Click **Deploy** and wait for the build to complete.
 7. Verify the app loads and the pipeline runs.
 
-> A live deployment URL is intentionally not listed until a deployment is created and verified.
+> Try the live deployment: <https://feature-engineering-analyzer-slr4etpc88hhfg6b3ouahx.streamlit.app/>
 
 ---
 
