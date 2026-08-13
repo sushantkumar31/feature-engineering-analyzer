@@ -50,6 +50,10 @@ Results view — baseline vs engineered comparison and detailed evaluation:
 
 ![Results and evaluation](assets/results.png)
 
+Quick walkthrough — upload a dataset, select a target, and step through the full analysis:
+
+![Feature Engineering Impact Analyzer demo](assets/demo.gif)
+
 ---
 
 ## 🛠️ Tech Stack

@@ -32,7 +32,7 @@ Thumbs.db
 *.pkl
 engineered_dataset.csv
 
-# Media (keep large animated assets out of the repository)
-assets/*.gif
+# Media (keep large animated assets out of the repository by default)
+# assets/demo.gif is intentionally tracked (force-added) as an optimized demo.
 assets/*.mp4
 assets/*.webm
