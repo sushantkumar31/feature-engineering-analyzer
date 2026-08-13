@@ -57,6 +57,9 @@ def load_dataframe_cached(raw: bytes) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Theme (light / dark) via CSS injection
 # ---------------------------------------------------------------------------
+THEME_TEXT_DARK = "#fafafa"
+THEME_TEXT_LIGHT = "#31333f"
+
 DARK_THEME_CSS = """
 /* App surfaces */
 .stApp, [data-testid="stAppViewContainer"] {
@@ -67,6 +70,7 @@ DARK_THEME_CSS = """
 [data-testid="stSidebar"] {
     background-color: #161b22 !important;
     border-right: 1px solid #262c36 !important;
+    color: #fafafa !important;
 }
 
 /* Text */
@@ -113,9 +117,35 @@ DARK_THEME_CSS = """
     background-color: #161b22 !important;
     color: #fafafa !important;
 }
-[data-testid="stRadio"] [data-baseweb="radio"] label,
+[data-testid="stRadio"] label,
 [data-testid="stCheckbox"] label span { color: #fafafa !important; }
 [data-testid="stExpander"] { color: #fafafa !important; }
+[data-testid="stExpander"] summary svg { fill: #fafafa !important; }
+
+/* Sliders (label, track labels + value badge) */
+[data-testid="stSlider"] { color: #fafafa !important; }
+[data-testid="stSlider"] *,
+[data-testid="stSlider"] [data-baseweb="slider"],
+[data-testid="stSlider"] [data-baseweb="slider"] div,
+[data-testid="stSlider"] [data-baseweb="slider"] output { color: #fafafa !important; }
+
+/* Selectbox / widget dropdown menus */
+[data-baseweb="popover"] ul {
+    background-color: #161b22 !important;
+}
+[data-baseweb="popover"] [role="option"] {
+    color: #fafafa !important;
+}
+[data-baseweb="popover"] [role="option"]:hover {
+    background-color: #262c36 !important;
+}
+
+/* Uploaded file chip */
+[data-testid="stFileUploader"] li {
+    background-color: #161b22 !important;
+    color: #fafafa !important;
+}
+[data-testid="stFileUploader"] li * { color: #fafafa !important; }
 
 /* Code blocks */
 [data-testid="stMarkdownContainer"] code {
@@ -134,6 +164,7 @@ LIGHT_THEME_CSS = """
 [data-testid="stSidebar"] {
     background-color: #f0f2f6 !important;
     border-right: 1px solid #e6e9ef !important;
+    color: #31333f !important;
 }
 [data-testid="stMarkdownContainer"] p,
 [data-testid="stHeading"] h1,
@@ -167,9 +198,36 @@ LIGHT_THEME_CSS = """
     background-color: #ffffff !important;
     color: #31333f !important;
 }
-[data-testid="stRadio"] [data-baseweb="radio"] label,
+[data-testid="stRadio"] label,
 [data-testid="stCheckbox"] label span { color: #31333f !important; }
 [data-testid="stExpander"] { color: #31333f !important; }
+[data-testid="stExpander"] summary svg { fill: #31333f !important; }
+[data-testid="stHeaderActionElements"] p { color: #31333f !important; }
+
+/* Sliders (label, track labels + value badge) */
+[data-testid="stSlider"] { color: #31333f !important; }
+[data-testid="stSlider"] *,
+[data-testid="stSlider"] [data-baseweb="slider"],
+[data-testid="stSlider"] [data-baseweb="slider"] div,
+[data-testid="stSlider"] [data-baseweb="slider"] output { color: #31333f !important; }
+
+/* Selectbox / widget dropdown menus */
+[data-baseweb="popover"] ul {
+    background-color: #ffffff !important;
+}
+[data-baseweb="popover"] [role="option"] {
+    color: #31333f !important;
+}
+[data-baseweb="popover"] [role="option"]:hover {
+    background-color: #eef0f4 !important;
+}
+
+/* Uploaded file chip */
+[data-testid="stFileUploader"] li {
+    background-color: #ffffff !important;
+    color: #31333f !important;
+}
+[data-testid="stFileUploader"] li * { color: #31333f !important; }
 [data-testid="stMarkdownContainer"] code {
     background-color: #f0f2f6 !important;
     color: #c7254e !important;
@@ -187,6 +245,7 @@ def render_theme_toggle() -> None:
         label_visibility="collapsed",
         index=1,
     )
+    st.session_state["fea_theme"] = theme
     css = DARK_THEME_CSS if theme == "Dark" else LIGHT_THEME_CSS
     if css:
         st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
@@ -377,7 +436,11 @@ def run_analysis(df: pd.DataFrame, target: str, model_name: str, config: Pipelin
 
     # --- Detailed evaluation ---
     st.header("5️⃣ Detailed Evaluation (Engineered)")
-    fig_cm = viz.confusion_matrix_figure(pd.DataFrame(engineered_result.confusion_matrix))
+    theme_is_dark = st.session_state.get("fea_theme", "Dark") == "Dark"
+    chart_text_color = THEME_TEXT_DARK if theme_is_dark else THEME_TEXT_LIGHT
+    fig_cm = viz.confusion_matrix_figure(
+        pd.DataFrame(engineered_result.confusion_matrix), text_color=chart_text_color
+    )
     st.pyplot(fig_cm)
     with st.expander("Full classification report"):
         st.text(engineered_result.report)
@@ -393,7 +456,7 @@ def run_analysis(df: pd.DataFrame, target: str, model_name: str, config: Pipelin
     if engineered_train.shape[1] >= 2:
         corr = engineered_train.corr()
         st.subheader("Correlation Heatmap (Engineered Features)")
-        st.pyplot(viz.correlation_heatmap(corr))
+        st.pyplot(viz.correlation_heatmap(corr, text_color=chart_text_color))
         st.caption(
             f"Correlations across {corr.shape[1]} engineered numeric columns "
             "(annotations hidden above 12 columns for readability)."
