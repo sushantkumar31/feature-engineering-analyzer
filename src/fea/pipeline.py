@@ -59,7 +59,7 @@ def engineer_features(df: pd.DataFrame, target: str, config: PipelineConfig) -> 
 
     pipeline = build_preprocessing_pipeline(config, numeric_cols, categorical_cols)
     engineered = pipeline.fit_transform(engineered.drop(columns=[target]))
-    engineered = pd.DataFrame(engineered)
+    engineered = pd.DataFrame(engineered, columns=pipeline.get_feature_names_out())
     engineered[target] = df[target].astype("category").cat.codes
 
     missing_after = int(engineered.isnull().sum().sum())
