@@ -4,7 +4,35 @@ __pycache__/
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
 
 # Virtual environments
-.venv
+.venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Streamlit local
+.streamlit/secrets.toml
+
+# Playwright MCP test artifacts
+.playwright-mcp/
+
+# Generated data
+*.pkl
+engineered_dataset.csv
+
+# Media (keep large animated assets out of the repository)
+assets/*.gif
+assets/*.mp4
+assets/*.webm

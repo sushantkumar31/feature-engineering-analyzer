@@ -1,3 +1,4 @@
+# Runtime dependencies for Streamlit Cloud
 streamlit==1.51.0
 pandas==2.2.3
 numpy==2.1.3
