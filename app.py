@@ -8,6 +8,12 @@ from __future__ import annotations
 
 import io
 import logging
+import os
+import sys
+
+# Ensure the `fea` package (under `src/`) is importable when the app runs from
+# the repository root without an editable install (e.g. Streamlit Cloud).
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 import joblib
 import pandas as pd
